@@ -808,7 +808,8 @@ function typeinf_edge(interp::AbstractInterpreter, method::Method, @nospecialize
             return Future(EdgeCall_to_MethodCall_Result(interp, caller, method, EdgeCallResult(Any, Any, nothing, Effects()), edgecycle, edgelimited))
         end
         assign_parentchild!(frame, caller)
-        # split off the rest of this (the recursion call) into a separate work thunk
+        # the actual inference task for this edge is going to be scheduled within `typeinf_local` via the callstack queue
+        # while splitting off the rest of the work for this caller into a separate workq thunk
         return Future{MethodCallResult}(false, interp, caller) do interp, caller
             update_valid_age!(caller, frame.valid_worlds)
             local isinferred = is_inferred(frame)
