@@ -805,18 +805,22 @@ function typeinf_edge(interp::AbstractInterpreter, method::Method, @nospecialize
         assign_parentchild!(frame, caller)
         # the actual inference task for this edge is going to be scheduled within `typeinf_local` via the callstack queue
         # while splitting off the rest of the work for this caller into a separate workq thunk
-        return Future{MethodCallResult}(false, interp, caller) do interp, caller
-            update_valid_age!(caller, frame.valid_worlds)
-            local isinferred = is_inferred(frame)
-            local edge = isinferred ? mi : nothing
-            local effects = isinferred ? frame.result.ipo_effects : # effects are adjusted already within `finish` for ipo_effects
-                adjust_effects(effects_for_cycle(frame.ipo_effects), method)
-            local exc_bestguess = refine_exception_type(frame.exc_bestguess, effects)
-            # propagate newly inferred source to the inliner, allowing efficient inlining w/o deserialization:
-            # note that this result is cached globally exclusively, so we can use this local result destructively
-            local volatile_inf_result = isinferred ? VolatileInferenceResult(result) : nothing
-            local edgeresult = EdgeCallResult(frame.bestguess, exc_bestguess, edge, effects, volatile_inf_result)
-            return EdgeCall_to_MethodCall_Result(interp, caller, method, edgeresult, edgecycle, edgelimited)
+        let mresult = Future{MethodCallResult}()
+            push!(caller.tasks, function get_infer_result(interp, caller)
+                update_valid_age!(caller, frame.valid_worlds)
+                local isinferred = is_inferred(frame)
+                local edge = isinferred ? mi : nothing
+                local effects = isinferred ? frame.result.ipo_effects : # effects are adjusted already within `finish` for ipo_effects
+                    adjust_effects(effects_for_cycle(frame.ipo_effects), method)
+                local exc_bestguess = refine_exception_type(frame.exc_bestguess, effects)
+                # propagate newly inferred source to the inliner, allowing efficient inlining w/o deserialization:
+                # note that this result is cached globally exclusively, so we can use this local result destructively
+                local volatile_inf_result = isinferred ? VolatileInferenceResult(result) : nothing
+                local edgeresult = EdgeCallResult(frame.bestguess, exc_bestguess, edge, effects, volatile_inf_result)
+                mresult[] = EdgeCall_to_MethodCall_Result(interp, caller, method, edgeresult, edgecycle, edgelimited)
+                return true
+            end)
+            return mresult
         end
     elseif frame === true
         # unresolvable cycle

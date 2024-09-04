@@ -1137,15 +1137,16 @@ Can also be constructed with the `completed` flag value and a closure to
 produce `x`, as well as the additional arguments to avoid always capturing the
 same couple of values.
 """
-mutable struct Future{T}
-    x::T
-    completed::Bool
-    Future{T}() where {T} = (f = new{T}(); f.completed = false; f)
-    Future{T}(x) where {T} = new{T}(x, true)
-    Future(x::T) where {T} = new{T}(x, true)
+struct Future{T}
+    later::Union{Nothing,RefValue{T}}
+    now::T
+    Future{T}() where {T} = new{T}(RefValue{T}())
+    Future{T}(x) where {T} = new{T}(nothing, x)
+    Future(x::T) where {T} = new{T}(nothing, x)
 end
-getindex(f::Future) = (@assert f.completed; f.x)
-setindex!(f::Future, v) = (@assert !f.completed; f.completed = true; f.x = v; f)
+isready(f::Future) = f.later === nothing
+getindex(f::Future) = (later = f.later; later === nothing ? f.now : f.later[])
+setindex!(f::Future, v) = something(f.later)[] = v
 convert(::Type{Future{T}}, x) where {T} = Future{T}(x) # support return type conversion
 convert(::Type{Future{T}}, x::Future) where {T} = x::Future{T}
 function Future{T}(f, immediate::Bool, interp::AbstractInterpreter, sv::AbsIntState) where {T}
@@ -1161,6 +1162,21 @@ function Future{T}(f, immediate::Bool, interp::AbstractInterpreter, sv::AbsIntSt
         return result
     end
 end
+function Future{T}(f, prev::Future{S}, interp::AbstractInterpreter, sv::AbsIntState) where {T, S}
+    later = prev.later
+    if later === nothing
+        return Future{T}(f(prev[], interp, sv))
+    else
+        @assert Core._hasmethod(Tuple{Core.Typeof(f), S, typeof(interp), typeof(sv)})
+        result = Future{T}()
+        push!(sv.tasks, function (interp, sv)
+            result[] = f(later[], interp, sv) # capture just later, instead of all of prev
+            return true
+        end)
+        return result
+    end
+end
+
 
 """
     doworkloop(args...)

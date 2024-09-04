@@ -173,7 +173,7 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
                 i += 1
                 return true
             end
-            if mresult.completed && handle1(interp, sv)
+            if isready(mresult) && handle1(interp, sv)
                 continue
             else
                 push!(sv.tasks, handle1)
@@ -1627,7 +1627,7 @@ function abstract_iteration(interp::AbstractInterpreter, @nospecialize(itft), @n
                 push!(ret, valtype)
                 statetype = nstatetype
                 call2future = abstract_call_known(interp, iteratef, ArgInfo(nothing, Any[Const(iteratef), itertype, statetype]), StmtInfo(true), sv)::Future
-                if !call2future.completed
+                if !isready(call2future)
                     nextstate = 0x1
                     return false
                     @label state1
@@ -1669,7 +1669,7 @@ function abstract_iteration(interp::AbstractInterpreter, @nospecialize(itft), @n
                 valtype = tmerge(valtype, nounion.parameters[1])
                 statetype = tmerge(statetype, nounion.parameters[2])
                 call2future = abstract_call_known(interp, iteratef, ArgInfo(nothing, Any[Const(iteratef), itertype, statetype]), StmtInfo(true), sv)::Future
-                if !call2future.completed
+                if !isready(call2future)
                     nextstate = 0x2
                     return false
                     @label state2
@@ -1691,7 +1691,7 @@ function abstract_iteration(interp::AbstractInterpreter, @nospecialize(itft), @n
         return true
     end # inferiterate
     # continue making progress as soon as possible, on iterate(arg)
-    if !(call1future.completed && inferiterate(interp, sv))
+    if !(isready(call1future) && inferiterate(interp, sv))
         push!(sv.tasks, inferiterate)
     end
     return iterateresult
@@ -1759,7 +1759,7 @@ function abstract_apply(interp::AbstractInterpreter, argtypes::Vector{Any}, si::
                 j += 1
                 if !isvarargtype(ti)
                     ctfuture = precise_container_type(interp, itft.contents, ti, sv)::Future
-                    if !ctfuture.completed
+                    if !isready(ctfuture)
                         nextstate = 0x1
                         return false
                         @label state1
@@ -1767,7 +1767,7 @@ function abstract_apply(interp::AbstractInterpreter, argtypes::Vector{Any}, si::
                     (;cti, info, ai_effects) = ctfuture[]
                 else
                     ctfuture = precise_container_type(interp, itft.contents, unwrapva(ti), sv)::Future
-                    if !ctfuture.completed
+                    if !isready(ctfuture)
                         nextstate = 0x2
                         return false
                         @label state2
@@ -1830,7 +1830,7 @@ function abstract_apply(interp::AbstractInterpreter, argtypes::Vector{Any}, si::
                 end
             end
             callfuture = abstract_call(interp, ArgInfo(nothing, ct), si, sv, max_methods)::Future
-            if !callfuture.completed
+            if !isready(callfuture)
                 nextstate = 0x3
                 return false
                 @label state3
@@ -2222,8 +2222,8 @@ function abstract_invoke(interp::AbstractInterpreter, arginfo::ArgInfo, si::Stmt
     env = tienv[2]::SimpleVector
     mresult = abstract_call_method(interp, method, ti, env, false, si, sv)::Future
     ti = Core.Box(ti)
-    return Future{CallMeta}(mresult.completed, interp, sv) do interp, sv
-        (; rt, edge, effects, volatile_inf_result) = mresult[]
+    return Future{CallMeta}(mresult, interp, sv) do result, interp, sv
+        (; rt, edge, effects, volatile_inf_result) = result
         match = MethodMatch(ti.contents, env, method, argtype <: method.sig)
         res = nothing
         sig = match.spec_types
@@ -2240,7 +2240,7 @@ function abstract_invoke(interp::AbstractInterpreter, arginfo::ArgInfo, si::Stmt
         f = singleton_type(ft′)
         invokecall = InvokeCall(types, lookupsig)
         const_call_result = abstract_call_method_with_const_args(interp,
-            mresult[], f, arginfo, si, match, sv, invokecall)
+            result, f, arginfo, si, match, sv, invokecall)
         const_result = volatile_inf_result
         if const_call_result !== nothing
             if ⊑(𝕃ₚ, const_call_result.rt, rt)
@@ -2265,8 +2265,8 @@ function abstract_finalizer(interp::AbstractInterpreter, argtypes::Vector{Any}, 
     if length(argtypes) == 3
         finalizer_argvec = Any[argtypes[2], argtypes[3]]
         call = abstract_call(interp, ArgInfo(nothing, finalizer_argvec), StmtInfo(false), sv, #=max_methods=#1)::Future
-        return Future{CallMeta}(call.completed, interp, sv) do interp, sv
-            return CallMeta(Nothing, Any, Effects(), FinalizerInfo(call[].info, call[].effects))
+        return Future{CallMeta}(call, interp, sv) do call, interp, sv
+            return CallMeta(Nothing, Any, Effects(), FinalizerInfo(call.info, call.effects))
         end
     end
     return Future(CallMeta(Nothing, Any, Effects(), NoCallInfo()))
@@ -2344,7 +2344,7 @@ function abstract_call_known(interp::AbstractInterpreter, @nospecialize(f),
             atype = Tuple{T...}
             T[1] = Const(TypeVar)
             let call = abstract_call_gf_by_type(interp, f, ArgInfo(nothing, T), si, atype, sv, max_methods)::Future
-                return Future{CallMeta}(call.completed, interp, sv) do interp, sv
+                return Future{CallMeta}(call, interp, sv) do call, interp, sv
                     n = argtypes[2]
                     ub_var = Const(Any)
                     lb_var = Const(Union{})
@@ -2362,14 +2362,14 @@ function abstract_call_known(interp::AbstractInterpreter, @nospecialize(f),
                     else
                         exct = builtin_exct(𝕃ᵢ, Core._typevar, typevar_argtypes, pT)
                     end
-                    return CallMeta(pT, exct, effects, call[].info)
+                    return CallMeta(pT, exct, effects, call.info)
                 end
             end
         end
     elseif f === UnionAll
         let call = abstract_call_gf_by_type(interp, f, ArgInfo(nothing, Any[Const(UnionAll), Any, Any]), si, Tuple{Type{UnionAll}, Any, Any}, sv, max_methods)::Future
-            return Future{CallMeta}(call.completed, interp, sv) do interp, sv
-                return abstract_call_unionall(interp, argtypes, call[])
+            return Future{CallMeta}(call, interp, sv) do call, interp, sv
+                return abstract_call_unionall(interp, argtypes, call)
             end
         end
     elseif f === Tuple && la == 2
@@ -2384,7 +2384,7 @@ function abstract_call_known(interp::AbstractInterpreter, @nospecialize(f),
         # mark !== as exactly a negated call to ===
         let callfuture = abstract_call_gf_by_type(interp, f, ArgInfo(fargs, Any[Const(f), Any, Any]), si, Tuple{typeof(f), Any, Any}, sv, max_methods)::Future,
             rtfuture = abstract_call_known(interp, (===), arginfo, si, sv, max_methods)::Future
-            return Future{CallMeta}(callfuture.completed && rtfuture.completed, interp, sv) do interp, sv
+            return Future{CallMeta}(isready(callfuture) && isready(rtfuture), interp, sv) do interp, sv
                 local rty = rtfuture[].rt
                 if isa(rty, Conditional)
                     return CallMeta(Conditional(rty.slot, rty.elsetype, rty.thentype), Bottom, EFFECTS_TOTAL, NoCallInfo()) # swap if-else
@@ -2425,13 +2425,13 @@ function abstract_call_opaque_closure(interp::AbstractInterpreter,
     ocmethod = closure.source::Method
     match = MethodMatch(sig, Core.svec(), ocmethod, sig <: ocsig)
     mresult = abstract_call_method(interp, ocmethod, sig, Core.svec(), false, si, sv)
-    return Future{CallMeta}(mresult.completed, interp, sv) do interp, sv
-        (; rt, edge, effects, volatile_inf_result, edgecycle) = mresult[]
+    return Future{CallMeta}(mresult, interp, sv) do result, interp, sv
+        (; rt, edge, effects, volatile_inf_result, edgecycle) = result
         𝕃ₚ = ipo_lattice(interp)
         ⊑ₚ = ⊑(𝕃ₚ)
         const_result = volatile_inf_result
         if !edgecycle
-            const_call_result = abstract_call_method_with_const_args(interp, mresult[],
+            const_call_result = abstract_call_method_with_const_args(interp, result,
                 nothing, arginfo, si, match, sv)
             if const_call_result !== nothing
                 if const_call_result.rt ⊑ₚ rt
@@ -2648,10 +2648,10 @@ function abstract_call(interp::AbstractInterpreter, arginfo::ArgInfo, sv::Infere
     end
     si = StmtInfo(!unused)
     call = abstract_call(interp, arginfo, si, sv)::Future
-    Future{Nothing}(call.completed, interp, sv) do interp, sv
+    Future{Nothing}(call, interp, sv) do call, interp, sv
         # this only is needed for the side-effect, sequenced before any task tries to consume the return value,
         # which this will do even without returning this Future
-        sv.stmt_info[sv.currpc] = call[].info
+        sv.stmt_info[sv.currpc] = call.info
         nothing
     end
     return call
@@ -2666,8 +2666,8 @@ function abstract_eval_call(interp::AbstractInterpreter, e::Expr, vtypes::Union{
     end
     arginfo = ArgInfo(ea, argtypes)
     call = abstract_call(interp, arginfo, sv)::Future
-    return Future{RTEffects}(call.completed, interp, sv) do interp, sv
-        (; rt, exct, effects, refinements) = call[]
+    return Future{RTEffects}(call, interp, sv) do call, interp, sv
+        (; rt, exct, effects, refinements) = call
         return RTEffects(rt, exct, effects, refinements)
     end
 end
@@ -2800,10 +2800,9 @@ function abstract_eval_new_opaque_closure(interp::AbstractInterpreter, e::Expr, 
                 pushfirst!(argtypes, rt.env)
                 callinfo = abstract_call_opaque_closure(interp, rt,
                     ArgInfo(nothing, argtypes), StmtInfo(true), sv, #=check=#false)::Future
-                return Future{RTEffects}(callinfo.completed, interp, sv) do interp, sv
-                    # whiles this does not contribute any information, it does need to be sequenced before this result so that sv.currpc is still correct
-                    sv.stmt_info[sv.currpc] = OpaqueClosureCreateInfo(callinfo[])
-                    RTEffects(rt, Any, effects)
+                Future{Nothing}(callinfo, interp, sv) do callinfo, interp, sv
+                    sv.stmt_info[sv.currpc] = OpaqueClosureCreateInfo(callinfo)
+                    nothing
                 end
             end
         end
@@ -3573,7 +3572,7 @@ function typeinf_local(interp::AbstractInterpreter, frame::InferenceState, nextr
                         rt = Nothing
                     else
                         result = abstract_eval_statement_expr(interp, stmt, currstate, frame)::Future
-                        if !result.completed || !isempty(frame.tasks)
+                        if !isready(result) || !isempty(frame.tasks)
                             return CurrentState(result, currstate, bbstart, bbend)
                             @label injectresult
                             # reload local variables

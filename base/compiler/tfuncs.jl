@@ -1418,16 +1418,16 @@ end
         callinfo = abstract_call(interp, ArgInfo(nothing, Any[op, TF, v]), StmtInfo(true), sv, #=max_methods=#1)
         TF = Core.Box(TF)
         RT = Core.Box(RT)
-        return Future{CallMeta}(callinfo.completed, interp, sv) do interp, sv
+        return Future{CallMeta}(callinfo, interp, sv) do callinfo, interp, sv
             TF = TF.contents
             RT = RT.contents
-            TF2 = tmeet(callinfo[].rt, widenconst(TF))
+            TF2 = tmeet(callinfo.rt, widenconst(TF))
             if TF2 === Bottom
                 RT = Bottom
             elseif isconcretetype(RT) && has_nontrivial_extended_info(𝕃ᵢ, TF2) # isconcrete condition required to form a PartialStruct
                 RT = PartialStruct(RT, Any[TF, TF2])
             end
-            info = ModifyOpInfo(callinfo[].info)
+            info = ModifyOpInfo(callinfo.info)
             return CallMeta(RT, Any, Effects(), info)
         end
     end
@@ -2941,12 +2941,12 @@ function return_type_tfunc(interp::AbstractInterpreter, argtypes::Vector{Any}, s
     end
     call = abstract_call(interp, ArgInfo(nothing, argtypes_vec), si, sv, #=max_methods=#-1)
     tt = Core.Box(tt)
-    return Future{CallMeta}(call.completed, interp, sv) do interp, sv
+    return Future{CallMeta}(call, interp, sv) do call, interp, sv
         if isa(sv, InferenceState)
             sv.restrict_abstract_call_sites = old_restrict
         end
-        info = verbose_stmt_info(interp) ? MethodResultPure(ReturnTypeCallInfo(call[].info)) : MethodResultPure()
-        rt = widenslotwrapper(call[].rt)
+        info = verbose_stmt_info(interp) ? MethodResultPure(ReturnTypeCallInfo(call.info)) : MethodResultPure()
+        rt = widenslotwrapper(call.rt)
         if isa(rt, Const)
             # output was computed to be constant
             return CallMeta(Const(typeof(rt.val)), Union{}, RT_CALL_EFFECTS, info)
