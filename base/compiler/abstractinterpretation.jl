@@ -2419,9 +2419,9 @@ function abstract_call_opaque_closure(interp::AbstractInterpreter,
     tt = closure.typ
     ocargsig = rewrap_unionall((unwrap_unionall(tt)::DataType).parameters[1], tt)
     ocargsig′ = unwrap_unionall(ocargsig)
-    ocargsig′ isa DataType || return CallMeta(Any, Any, Effects(), NoCallInfo())
+    ocargsig′ isa DataType || return Future(CallMeta(Any, Any, Effects(), NoCallInfo()))
     ocsig = rewrap_unionall(Tuple{Tuple, ocargsig′.parameters...}, ocargsig)
-    hasintersect(sig, ocsig) || return CallMeta(Union{}, TypeError, EFFECTS_THROWS, NoCallInfo())
+    hasintersect(sig, ocsig) || return Future(CallMeta(Union{}, TypeError, EFFECTS_THROWS, NoCallInfo()))
     ocmethod = closure.source::Method
     match = MethodMatch(sig, Core.svec(), ocmethod, sig <: ocsig)
     mresult = abstract_call_method(interp, ocmethod, sig, Core.svec(), false, si, sv)
