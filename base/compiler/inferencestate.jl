@@ -874,6 +874,7 @@ function print_callstack(frame::AbsIntState)
         print(frame_instance(sv))
         is_cached(sv) || print("  [uncached]")
         sv.parentid == idx - 1 || print(" [parent=", sv.parentid, "]")
+        isempty(callers_in_cycle(sv)) || print(" [cycle=", sv.cycleid, "]")
         println()
         @assert sv.frameid == idx
     end
@@ -998,7 +999,10 @@ of the same cycle, only if it is part of a cycle with multiple frames.
 function callers_in_cycle(sv::InferenceState)
     callstack = sv.callstack::Vector{AbsIntState}
     cycletop = cycleid = sv.cycleid
-    while cycletop < length(callstack) && (callstack[cycletop + 1]::InferenceState).cycleid == cycleid
+    while cycletop < length(callstack)
+        frame = callstack[cycletop + 1]
+        frame isa InferenceState || break
+        frame.cycleid == cycleid || break
         cycletop += 1
     end
     return AbsIntCycle(callstack, cycletop == cycleid ? 0 : cycleid, cycletop)

@@ -146,14 +146,17 @@ function reprocess_instruction!(interp::AbstractInterpreter, inst::Instruction, 
         head = stmt.head
         if (head === :call || head === :foreigncall || head === :new || head === :splatnew ||
             head === :static_parameter || head === :isdefined || head === :boundscheck)
-            @assert isempty(irsv.tasks) # jwn
+            @assert isempty(irsv.tasks) # TODO: this whole function needs to be converted to a stackless design to be a valid AbsIntState, but this should work here for now
             result = abstract_eval_statement_expr(interp, stmt, nothing, irsv)
             reverse!(irsv.tasks)
-            if length(irsv.callstack) > irsv.frameid
-                typeinf(interp, irsv.callstack[irsv.frameid + 1])
+            while true
+                if length(irsv.callstack) > irsv.frameid
+                    typeinf(interp, irsv.callstack[irsv.frameid + 1])
+                elseif !doworkloop(interp, irsv)
+                    break
+                end
             end
-            @assert length(irsv.callstack) == irsv.frameid
-            while doworkloop(interp, irsv) end
+            @assert length(irsv.callstack) == irsv.frameid && isempty(irsv.tasks)
             result isa Future && (result = result[])
             (; rt, effects) = result
             add_flag!(inst, flags_for_effects(effects))

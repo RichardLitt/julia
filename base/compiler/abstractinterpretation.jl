@@ -1333,7 +1333,7 @@ function const_prop_call(interp::AbstractInterpreter,
     end
     # perform fresh constant prop'
     inf_result = InferenceResult(mi, argtypes, overridden_by_const)
-    frame = InferenceState(inf_result, #=cache_mode=#:local, interp) # jwn
+    frame = InferenceState(inf_result, #=cache_mode=#:local, interp) # TODO: this should also be converted to a stackless Future
     if frame === nothing
         add_remark!(interp, sv, "[constprop] Could not retrieve the source")
         return nothing # this is probably a bad generated function (unsound), but just ignore it
@@ -3535,7 +3535,7 @@ function typeinf_local(interp::AbstractInterpreter, frame::InferenceState, nextr
                 # Fall through terminator - treat as regular stmt
             end
             # Process non control-flow statements
-            @assert isempty(frame.tasks) # jwn
+            @assert isempty(frame.tasks)
             rt = nothing
             exct = Bottom
             changes = nothing

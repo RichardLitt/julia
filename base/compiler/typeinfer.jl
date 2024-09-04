@@ -637,16 +637,11 @@ function merge_call_chain!(interp::AbstractInterpreter, parent::InferenceState, 
         add_cycle_backedge!(parent, child)
         parent.cycleid === ancestorid && break
         child = parent
-        parent = frame_parent(child)
-        while !isa(parent, InferenceState)
-            # XXX we may miss some edges here?
-            parent = frame_parent(parent::IRInterpretationState)
-        end
+        parent = frame_parent(child)::InferenceState
     end
     # ensure that walking the callstack has the same cycleid (DAG)
     for frame = reverse(ancestorid:length(frames))
-        frame = frames[frame]
-        frame isa InferenceState || continue
+        frame = frames[frame]::InferenceState
         frame.cycleid == ancestorid && break
         @assert frame.cycleid > ancestorid
         frame.cycleid = ancestorid
@@ -671,9 +666,9 @@ end
 # returned instead.
 function resolve_call_cycle!(interp::AbstractInterpreter, mi::MethodInstance, parent::AbsIntState)
     # TODO (#48913) implement a proper recursion handling for irinterp:
-    # This works just because currently the `:terminate` condition guarantees that
-    # irinterp doesn't fail into unresolved cycles, but it's not a good solution.
-    # We should revisit this once we have a better story for handling cycles in irinterp.
+    # This works currently just because the irinterp code doesn't get used much with
+    # `@assume_effects`, so it never sees a cycle normally, but that may not be a sustainable solution.
+    parent isa InferenceState || return false
     frames = parent.callstack::Vector{AbsIntState}
     uncached = false
     for frame = reverse(1:length(frames))
