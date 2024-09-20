@@ -49,6 +49,12 @@ function issue_54275_test()
     @test !live_bytes_has_grown_too_much
 end
 
+function full_gc_reasons_test()
+    GC.gc()
+    reasons = Base.full_gc_reasons()
+    @test reasons[:FULL_GC_REASON_FORCED_FULL_SWEEP] >= 1
+end
+
 # !!! note:
 #     Since we run our tests on 32bit OS as well we confine ourselves
 #     to parameters that allocate about 512MB of objects. Max RSS is lower
@@ -71,4 +77,8 @@ end
 
 @testset "Base.GC docstrings" begin
     @test isempty(Docs.undocumented_names(GC))
+end
+
+@testset "Full GC reasons" begin
+    full_gc_reasons_test()
 end

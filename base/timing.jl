@@ -104,6 +104,19 @@ function gc_page_utilization_data()
     return Base.unsafe_wrap(Array, page_utilization_raw, JL_GC_N_MAX_POOLS, own=false)
 end
 
+# must be kept in sync with `src/gc-stock.h``
+const FULL_GC_REASONS = [:FULL_GC_REASON_SWEEP_ALWAYS_FULL, :FULL_GC_REASON_FORCED_FULL_SWEEP,
+                         :FULL_GC_REASON_USER_MAX_EXCEEDED, :FULL_GC_REASON_LARGE_PROMOTION_RATE]
+function full_gc_reasons()
+    reason = cglobal(:jl_full_sweep_reasons, UInt64)
+    reasons_as_array = Base.unsafe_wrap(Vector{UInt64}, reason, length(FULL_GC_REASONS), own=false)
+    d = Dict{Symbol, UInt64}()
+    for (i, r) in enumerate(FULL_GC_REASONS)
+        d[r] = reasons_as_array[i]
+    end
+    return d
+end
+
 """
     Base.jit_total_bytes()
 
