@@ -662,13 +662,15 @@ function add_edges!(edges::Vector{Any}, info::ApplyCallInfo)
     end
 end
 add_edges!(edges::Vector{Any}, info::ModifyOpInfo) = add_edges!(edges, info.info)
-add_edges!(edges::Vector{Any}, info::UnionSplitInfo) = for split in info.matches; add_edges!(edges, split); end
-add_edges!(edges::Vector{Any}, info::UnionSplitApplyCallInfo) = for split in info.infos; add_edges!(edges, split); end
+add_edges!(edges::Vector{Any}, info::UnionSplitInfo) =
+    for split in info.split; add_edges!(edges, split); end
+add_edges!(edges::Vector{Any}, info::UnionSplitApplyCallInfo) =
+    for split in info.infos; add_edges!(edges, split); end
 add_edges!(edges::Vector{Any}, info::FinalizerInfo) = nothing # merely allocating a finalizer does not imply edges (unless it gets inlined later)
 add_edges!(edges::Vector{Any}, info::NoCallInfo) = nothing
 function add_edges!(edges::Vector{Any}, info::MethodMatchInfo)
     matches = info.results.matches
-    if isempty(matches) || !(matches[end]::Core.MethodMatch).fully_covers
+    if !fully_covering(info)
         # add legacy-style missing backedge info also
         exists = false
         for i in 1:length(edges)
@@ -690,13 +692,13 @@ function add_edges!(edges::Vector{Any}, info::MethodMatchInfo)
         mi = specialize_method(m)
         if mi.specTypes === m.spec_types
             add_one_edge!(edges, mi)
-            return
+            return nothing
         end
     end
     # add check for whether this lookup already existed in the edges list
     for i in 1:length(edges)
         if edges[i] === length(matches) && edges[i + 1] == info.atype
-            return
+            return nothing
         end
     end
     push!(edges, length(matches))

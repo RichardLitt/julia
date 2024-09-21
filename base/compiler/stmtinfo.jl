@@ -76,6 +76,15 @@ function add_uncovered_edges_impl(edges::Vector{Any}, info::UnionSplitInfo, @nos
         push!(edges, mt, atype)
     end
 end
+function uncovered_method_tables(info::UnionSplitInfo)
+    mts = MethodTable[]
+    for mminfo in info.split
+        fully_covering(mminfo) && continue
+        any(mt′::MethodTable->mt′===mminfo.mt, mts) && continue
+        push!(mts, mminfo.mt)
+    end
+    return mts
+end
 
 abstract type ConstResult end
 
